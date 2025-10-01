@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Species Revision</title>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Open Sans', sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            height: 100vh;
+            gap: 0;
+        }
+
+        .left-panel {
+            background: #000;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: #000;
+        }
+
+        #videoCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            cursor: crosshair;
+        }
+
+        .placeholder {
+            color: #757575;
+            font-size: 16px;
+        }
+
+        .video-controls {
+            background: #1a1a1a;
+            padding: 16px 24px;
+            border-top: 1px solid #333;
+        }
+
+        .playback-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .play-btn {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 50%;
+            background: #1976d2;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .play-btn:hover {
+            background: #1565c0;
+        }
+
+        .time-display {
+            color: #e0e0e0;
+            font-size: 13px;
+            min-width: 110px;
+        }
+
+        .slider-container {
+            flex: 1;
+        }
+
+        #videoSlider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #424242;
+            outline: none;
+            -webkit-appearance: none;
+            cursor: pointer;
+        }
+
+        #videoSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #1976d2;
+            cursor: pointer;
+        }
+
+        #videoSlider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #1976d2;
+            cursor: pointer;
+            border: none;
+        }
+
+        .right-panel {
+            background: white;
+            border-left: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 20px;
+            background: #3b82f6;
+            color: white;
+        }
+
+        .panel-header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .panel-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            margin-bottom: 6px;
+            text-transform: capitalize;
+        }
+
+        .form-input, .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            font-size: 14px;
+            background: white;
+        }
+
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: #1976d2;
+        }
+
+        .screenshot-box {
+            width: 100%;
+            height: 200px;
+            background: #f0f9ff;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #3b82f6;
+            font-size: 13px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+
+        .screenshot-box img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .screenshot-species-box {
+            width: 100%;
+            min-height: 150px;
+            background: #f5f5f5;
+            border: 2px dashed #d0d0d0;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #9e9e9e;
+            font-size: 13px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .screenshot-species-box img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .measure-size-grid {
+            display: grid;
+            grid-template-columns: 80px 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .measure-btn-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .measure-btn {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #d0d0d0;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: #6b7280;
+            transition: all 0.2s;
+            margin-bottom: 8px;
+        }
+
+        .measure-btn:hover:not(:disabled) {
+            border-color: #4caf50;
+        }
+
+        .measure-btn.active {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+
+        .measure-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .measurement-box {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            height: 60px;
+        }
+
+        .measure-icon {
+            width: 35px;
+            height: 35px;
+            background: #4caf50;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .measure-value {
+            flex: 1;
+            font-size: 18px;
+            font-weight: 600;
+            color: #212121;
+        }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: #1976d2;
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: #1565c0;
+        }
+
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .btn-success:hover:not(:disabled) {
+            background: #388e3c;
+        }
+
+        .btn-calibrate-active {
+            background: #ff9800 !important;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        .progress-bar {
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: #1976d2;
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        #fileInput {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Panel Izquierdo (Video) -->
+        <div class="left-panel">
+            <div class="video-container">
+                <canvas id="videoCanvas"></canvas>
+                <div class="placeholder" id="placeholder">
+                    Click para seleccionar un video
+                </div>
+            </div>
+
+            <div class="video-controls">
+                <div class="playback-controls">
+                    <button class="play-btn" id="btnPlay" disabled>▶</button>
+                    <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+                    <div class="slider-container">
+                        <input type="range" id="videoSlider" min="0" max="100" value="0" disabled>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Derecho (Datos) -->
+        <div class="right-panel">
+            <div class="panel-header">
+                <h1>Species Revision</h1>
+            </div>
+
+            <div class="panel-content">
+                <!-- Screenshot -->
+                <div class="screenshot-box" id="screenshot">
+                    Sin captura
+                </div>
+
+                <!-- Catch Type -->
+                <div class="form-group">
+                    <label class="form-label">Catch type</label>
+                    <select class="form-select" id="catchType">
+                        <option value="target">Target</option>
+                        <option value="bycatch">Bycatch</option>
+                        <option value="discard">Descarte</option>
+                    </select>
+                </div>
+
+                <!-- Species -->
+                <div class="form-group">
+                    <label class="form-label">Species</label>
+                    <select class="form-select" id="species">
+                        <option value="">Seleccionar...</option>
+                        <option value="thunnus">Thunnus thynnus</option>
+                        <option value="scomber">Scomber scombrus</option>
+                        <option value="sardina">Sardina pilchardus</option>
+                        <option value="engraulis">Engraulis encrasicolus</option>
+                    </select>
+                </div>
+
+                <!-- Calibrar -->
+                <div class="form-group">
+                    <button class="btn btn-primary" id="btnCalibrate" disabled>Calibrar</button>
+                </div>
+
+                <!-- Measure & Size -->
+                <div class="measure-size-grid">
+                    <div>
+                        <label class="form-label">Measure</label>
+                        <div class="measure-btn-container">
+                            <button class="measure-btn" id="btnMeasure" disabled>📏</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label">Size</label>
+                        <div class="measurement-box">
+                            <div class="measure-icon">cm</div>
+                            <div class="measure-value" id="measureValue">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Screenshot Species -->
+                <div class="form-group">
+                    <label class="form-label">Screenshot species</label>
+                    <div class="screenshot-species-box" id="screenshotSpecies">
+                        Sin medición
+                    </div>
+                </div>
+
+                <!-- Disposition -->
+                <div class="form-group">
+                    <label class="form-label">Disposition</label>
+                    <select class="form-select" id="disposition">
+                        <option value="">Seleccionar...</option>
+                        <option value="kept">Retenido</option>
+                        <option value="released">Liberado</option>
+                        <option value="dead">Muerto</option>
+                    </select>
+                </div>
+
+                <!-- Progreso -->
+                <div id="progressContainer" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+
+                <!-- Guardar -->
+                <button class="btn btn-success" id="btnSave" disabled>
+                    Guardar Registro
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <input type="file" id="fileInput" accept="video/*">
+
+    <script async src="https://docs.opencv.org/4.5.2/opencv.js"></script>
+
+    <script>
+        // Variables globales
+        let video = null;
+        let canvas = null;
+        let ctx = null;
+        let isPlaying = false;
+        let animationId = null;
+        let currentFrame = 0;
+        let totalFrames = 0;
+        let surfacePoints = null;
+        let measurements = {};
+        let isSliderPressed = false;
+        let isCalibrateMode = false;
+        let isMeasureMode = false;
+        let isDraggingCorner = false;
+        let draggedCornerIndex = -1;
+        let isDrawingLine = false;
+        let lineStart = null;
+        let lineEnd = null;
+
+        // Elementos DOM
+        const btnPlay = document.getElementById('btnPlay');
+        const btnCalibrate = document.getElementById('btnCalibrate');
+        const btnMeasure = document.getElementById('btnMeasure');
+        const btnSave = document.getElementById('btnSave');
+        const videoSlider = document.getElementById('videoSlider');
+        const fileInput = document.getElementById('fileInput');
+        const placeholder = document.getElementById('placeholder');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const measureValue = document.getElementById('measureValue');
+        const screenshot = document.getElementById('screenshot');
+        const screenshotSpecies = document.getElementById('screenshotSpecies');
+
+        canvas = document.getElementById('videoCanvas');
+        ctx = canvas.getContext('2d');
+
+        // Event Listeners
+        btnPlay.addEventListener('click', togglePlay);
+        btnCalibrate.addEventListener('click', toggleCalibrateMode);
+        btnMeasure.addEventListener('click', toggleMeasureMode);
+        btnSave.addEventListener('click', saveRecord);
+        
+        videoSlider.addEventListener('input', handleSliderChange);
+        videoSlider.addEventListener('mousedown', () => isSliderPressed = true);
+        videoSlider.addEventListener('mouseup', () => {
+            isSliderPressed = false;
+            seekToFrame(parseInt(videoSlider.value));
+        });
+
+        canvas.addEventListener('mousedown', handleCanvasMouseDown);
+        canvas.addEventListener('mousemove', handleCanvasMouseMove);
+        canvas.addEventListener('mouseup', handleCanvasMouseUp);
+
+        // Cargar video al hacer click en el canvas
+        canvas.addEventListener('click', () => {
+            if (!video) {
+                fileInput.click();
+            }
+        });
+
+        placeholder.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', handleFileSelect);
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (video) URL.revokeObjectURL(video.src);
+
+            video = document.createElement('video');
+            video.src = URL.createObjectURL(file);
+            video.preload = 'metadata';
+
+            video.addEventListener('loadedmetadata', () => {
+                totalFrames = Math.floor(video.duration * 30);
+                videoSlider.max = totalFrames - 1;
+                videoSlider.disabled = false;
+                btnPlay.disabled = false;
+                btnCalibrate.disabled = false;
+                
+                timeDisplay.textContent = `0:00 / ${formatTime(video.duration)}`;
+                
+                placeholder.style.display = 'none';
+                canvas.style.display = 'block';
+                
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                renderFrame();
+            });
+
+            video.addEventListener('seeked', () => {
+                if (!isPlaying) renderFrame();
+            });
+
+            measurements = {};
+            surfacePoints = null;
+        }
+
+        function togglePlay() {
+            if (isPlaying) {
+                pause();
+            } else {
+                play();
+            }
+        }
+
+        function play() {
+            if (!video) return;
+            isPlaying = true;
+            btnPlay.innerHTML = '⏸';
+            updateUI();
+            animate();
+        }
+
+        function pause() {
+            isPlaying = false;
+            btnPlay.innerHTML = '▶';
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            updateUI();
+        }
+
+        function animate() {
+            if (!isPlaying) return;
+
+            if (video.currentTime >= video.duration) {
+                video.currentTime = 0;
+                pause();
+                return;
+            }
+
+            renderFrame();
+            currentFrame = Math.floor(video.currentTime * 30);
+            videoSlider.value = currentFrame;
+            timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+
+            video.currentTime += 1 / 30;
+            animationId = requestAnimationFrame(animate);
+        }
+
+        function seekToFrame(frame) {
+            if (!video) return;
+            currentFrame = frame;
+            video.currentTime = frame / 30;
+            timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+        }
+
+        function handleSliderChange(event) {
+            if (!isSliderPressed) return;
+            if (isPlaying) pause();
+            const time = parseInt(event.target.value) / 30;
+            timeDisplay.textContent = `${formatTime(time)} / ${formatTime(video.duration)}`;
+        }
+
+        function renderFrame() {
+            if (!video || !ctx) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            if (surfacePoints) {
+                drawGrid(ctx, surfacePoints);
+                
+                // Dibujar asteriscos morados solo si está en modo calibración
+                if (isCalibrateMode) {
+                    drawCornerHandles(ctx, surfacePoints);
+                }
+            }
+
+            const frameKey = currentFrame.toString();
+            if (measurements[frameKey]) {
+                for (const m of measurements[frameKey]) {
+                    drawMeasurement(ctx, m.p1, m.p2, m.distance);
+                }
+            }
+
+            if (isDrawingLine && lineStart && lineEnd) {
+                const distance = calculateDistance(lineStart, lineEnd);
+                drawMeasurement(ctx, lineStart, lineEnd, distance);
+                measureValue.textContent = distance.toFixed(1) + ' cm';
+            }
+        }
+
+        function drawCornerHandles(ctx, points) {
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                
+                // Dibujar asterisco morado
+                ctx.fillStyle = '#9333ea';
+                ctx.strokeStyle = '#9333ea';
+                ctx.lineWidth = 2;
+                ctx.lineCap = 'round';
+                
+                const size = 8;
+                const numRays = 8;
+                
+                for (let j = 0; j < numRays; j++) {
+                    const angle = (Math.PI * 2 * j) / numRays;
+                    const x1 = point.x;
+                    const y1 = point.y;
+                    const x2 = point.x + Math.cos(angle) * size;
+                    const y2 = point.y + Math.sin(angle) * size;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.stroke();
+                }
+                
+                // Centro del asterisco
+                ctx.fillStyle = '#9333ea';
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function getCornerAtPosition(x, y, threshold = 20) {
+            if (!surfacePoints || !isCalibrateMode) return -1;
+            
+            for (let i = 0; i < surfacePoints.length; i++) {
+                const point = surfacePoints[i];
+                const distance = Math.sqrt(
+                    Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2)
+                );
+                if (distance <= threshold) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function updateUI() {
+            const hasSurface = surfacePoints !== null;
+
+            if (isPlaying) {
+                btnCalibrate.disabled = true;
+                btnMeasure.disabled = true;
+            } else {
+                btnCalibrate.disabled = video === null;
+                btnMeasure.disabled = !hasSurface || isCalibrateMode;
+            }
+
+            if (isCalibrateMode) {
+                btnCalibrate.textContent = 'Finalizar Calibración';
+                btnCalibrate.classList.add('btn-calibrate-active');
+                canvas.style.cursor = 'move';
+            } else {
+                btnCalibrate.textContent = 'Calibrar';
+                btnCalibrate.classList.remove('btn-calibrate-active');
+                canvas.style.cursor = 'crosshair';
+            }
+
+            if (isMeasureMode) {
+                btnMeasure.classList.add('active');
+                canvas.style.cursor = 'crosshair';
+            } else {
+                btnMeasure.classList.remove('active');
+            }
+        }
+
+        async function toggleCalibrateMode() {
+            if (!video) return;
+
+            if (isCalibrateMode) {
+                isCalibrateMode = false;
+                updateUI();
+                renderFrame();
+            } else {
+                if (isMeasureMode) {
+                    isMeasureMode = false;
+                }
+                
+                if (!surfacePoints) {
+                    await autoDetect();
+                } else {
+                    isCalibrateMode = true;
+                    updateUI();
+                    renderFrame();
+                }
+            }
+        }
+
+        async function toggleMeasureMode() {
+            if (!surfacePoints) return;
+
+            if (isMeasureMode) {
+                isMeasureMode = false;
+                updateUI();
+                renderFrame();
+            } else {
+                if (isCalibrateMode) {
+                    isCalibrateMode = false;
+                }
+                isMeasureMode = true;
+                updateUI();
+                renderFrame();
+            }
+        }
+
+        async function autoDetect() {
+            btnCalibrate.disabled = true;
+            btnPlay.disabled = true;
+            videoSlider.disabled = true;
+
+            progressContainer.style.display = 'block';
+            progressFill.style.width = '0%';
+
+            try {
+                canvas.toBlob((blob) => {
+                    screenshot.innerHTML = `<img src="${URL.createObjectURL(blob)}">`;
+                });
+
+                await new Promise(resolve => setTimeout(resolve, 800));
+                progressFill.style.width = '50%';
+
+                await new Promise(resolve => setTimeout(resolve, 800));
+                progressFill.style.width = '100%';
+
+                const w = canvas.width;
+                const h = canvas.height;
+                surfacePoints = [
+                    {x: w * 0.2, y: h * 0.3},
+                    {x: w * 0.8, y: h * 0.3},
+                    {x: w * 0.8, y: h * 0.7},
+                    {x: w * 0.2, y: h * 0.7}
+                ];
+
+                isCalibrateMode = true;
+                updateUI();
+                renderFrame();
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                btnPlay.disabled = false;
+                videoSlider.disabled = false;
+                progressContainer.style.display = 'none';
+            }
+        }
+
+        function saveRecord() {
+            alert('Registro guardado');
+        }
+
+        function handleCanvasMouseDown(event) {
+            if (!video) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+
+            if (isCalibrateMode) {
+                const cornerIndex = getCornerAtPosition(x, y);
+                if (cornerIndex !== -1) {
+                    isDraggingCorner = true;
+                    draggedCornerIndex = cornerIndex;
+                    canvas.style.cursor = 'grabbing';
+                }
+            } else if (isMeasureMode && surfacePoints && !isPlaying) {
+                isDrawingLine = true;
+                lineStart = {x, y};
+                btnSave.disabled = false;
+            }
+        }
+
+        function handleCanvasMouseMove(event) {
+            if (!video) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+
+            if (isCalibrateMode) {
+                if (isDraggingCorner && draggedCornerIndex !== -1) {
+                    surfacePoints[draggedCornerIndex] = {x, y};
+                    renderFrame();
+                } else {
+                    const cornerIndex = getCornerAtPosition(x, y);
+                    canvas.style.cursor = cornerIndex !== -1 ? 'grab' : 'move';
+                }
+            } else if (isMeasureMode && isDrawingLine && lineStart) {
+                lineEnd = {x, y};
+                renderFrame();
+            }
+        }
+
+        function handleCanvasMouseUp(event) {
+            if (!video) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+
+            if (isCalibrateMode) {
+                if (isDraggingCorner) {
+                    isDraggingCorner = false;
+                    draggedCornerIndex = -1;
+                    canvas.style.cursor = 'move';
+                }
+            } else if (isMeasureMode && isDrawingLine && lineStart) {
+                isDrawingLine = false;
+                lineEnd = {x, y};
+                
+                const distance = calculateDistance(lineStart, lineEnd);
+                const frameKey = currentFrame.toString();
+                
+                if (!measurements[frameKey]) {
+                    measurements[frameKey] = [];
+                }
+                
+                measurements[frameKey].push({
+                    p1: lineStart,
+                    p2: lineEnd,
+                    distance: distance
+                });
+
+                measureValue.textContent = distance.toFixed(1) + ' cm';
+                
+                // Capturar screenshot de la especie
+                captureSpeciesScreenshot(lineStart, lineEnd);
+                
+                lineStart = null;
+                lineEnd = null;
+                renderFrame();
+            }
+        }
+
+        function captureSpeciesScreenshot(p1, p2) {
+            const padding = 100;
+            const minX = Math.max(0, Math.min(p1.x, p2.x) - padding);
+            const minY = Math.max(0, Math.min(p1.y, p2.y) - padding);
+            const maxX = Math.min(canvas.width, Math.max(p1.x, p2.x) + padding);
+            const maxY = Math.min(canvas.height, Math.max(p1.y, p2.y) + padding);
+            
+            const width = maxX - minX;
+            const height = maxY - minY;
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            tempCtx.drawImage(canvas, minX, minY, width, height, 0, 0, width, height);
+            
+            tempCanvas.toBlob((blob) => {
+                screenshotSpecies.innerHTML = `<img src="${URL.createObjectURL(blob)}" alt="Species">`;
+            });
+        }
+
+        function drawMeasurement(ctx, p1, p2, distance) {
+            ctx.strokeStyle = '#4caf50';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const perpX = -dy / len * 10;
+            const perpY = dx / len * 10;
+
+            ctx.beginPath();
+            ctx.moveTo(p1.x - perpX, p1.y - perpY);
+            ctx.lineTo(p1.x + perpX, p1.y + perpY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(p2.x - perpX, p2.y - perpY);
+            ctx.lineTo(p2.x + perpX, p2.y + perpY);
+            ctx.stroke();
+
+            const midX = (p1.x + p2.x) / 2;
+            const midY = (p1.y + p2.y) / 2;
+            const text = distance.toFixed(1) + ' cm';
+            
+            ctx.font = 'bold 18px "Open Sans", Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            const metrics = ctx.measureText(text);
+            const padding = 8;
+            
+            ctx.fillStyle = '#4caf50';
+            ctx.fillRect(midX - metrics.width/2 - padding, midY - 14, metrics.width + padding*2, 28);
+            
+            ctx.fillStyle = 'white';
+            ctx.fillText(text, midX, midY);
+        }
+
+        function drawGrid(ctx, points) {
+            ctx.strokeStyle = '#ffc107';
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            ctx.lineTo(points[1].x, points[1].y);
+            ctx.lineTo(points[2].x, points[2].y);
+            ctx.lineTo(points[3].x, points[3].y);
+            ctx.closePath();
+            ctx.stroke();
+
+            for (const point of points) {
+                ctx.fillStyle = '#ffc107';
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function calculateDistance(p1, p2) {
+            if (!surfacePoints) return 0;
+            
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            const pixelDist = Math.sqrt(dx * dx + dy * dy);
+            
+            const surfaceDx = surfacePoints[1].x - surfacePoints[0].x;
+            const surfaceDy = surfacePoints[1].y - surfacePoints[0].y;
+            const surfacePixels = Math.sqrt(surfaceDx * surfaceDx + surfaceDy * surfaceDy);
+            const cmPerPixel = 40 / surfacePixels;
+            
+            return pixelDist * cmPerPixel;
+        }
+
+        let checkInterval = setInterval(() => {
+            if (typeof cv !== 'undefined') {
+                clearInterval(checkInterval);
+                console.log('OpenCV.js listo');
+            }
+        }, 100);
+    </script>
+</body>
+</html>
