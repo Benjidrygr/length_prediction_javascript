@@ -490,6 +490,371 @@ function calculateRealDistance(p1, p2, surfacePoints) {
     return distCm;
 }
 
+/**
+ * Codifica una imagen a JPEG y la convierte a base64
+ * @param {HTMLVideoElement|HTMLCanvasElement} source - Fuente de la imagen (video o canvas)
+ * @returns {Promise<string>} Imagen codificada en base64 (sin prefijo)
+ */
+async function encodeImageToBase64(source) {
+    // Crear canvas temporal
+    const tempCanvas = document.createElement('canvas');
+    
+    if (source instanceof HTMLVideoElement) {
+        tempCanvas.width = source.videoWidth;
+        tempCanvas.height = source.videoHeight;
+    } else if (source instanceof HTMLCanvasElement) {
+        tempCanvas.width = source.width;
+        tempCanvas.height = source.height;
+    } else {
+        throw new Error('Source debe ser un HTMLVideoElement o HTMLCanvasElement');
+    }
+
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(source, 0, 0, tempCanvas.width, tempCanvas.height);
+
+    // Convertir a base64 usando el método nativo del canvas (JPEG)
+    return new Promise((resolve, reject) => {
+        tempCanvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('Error al codificar la imagen'));
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                // Remover el prefijo data:image/jpeg;base64,
+                const base64 = reader.result.replace(/^data:image\/jpeg;base64,/, '');
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        }, 'image/jpeg', 0.9); // Calidad JPEG 90%
+    });
+}
+
+/**
+ * Calcula el bounding box de un array de puntos
+ * @param {Array<{x: number, y: number}>} points - Array de puntos
+ * @returns {Array<number>} Bounding box [x1, y1, x2, y2]
+ */
+function calculateBoundingBox(points) {
+    if (!points || points.length === 0) {
+        throw new Error('No hay puntos para calcular el bounding box');
+    }
+
+    const xs = points.map(p => p.x);
+    const ys = points.map(p => p.y);
+    const x1 = Math.min(...xs);
+    const y1 = Math.min(...ys);
+    const x2 = Math.max(...xs);
+    const y2 = Math.max(...ys);
+
+    return [x1, y1, x2, y2];
+}
+
+/**
+ * Clase para proyectar mallas 3D sobre la superficie detectada
+ */
+class SurfaceProjector {
+    /**
+     * @param {Object} imageShape - {width: number, height: number}
+     * @param {Array<{x: number, y: number}>} detected2DPoints - 4 puntos detectados en 2D
+     * @param {number} realWorldSideCm - Lado del cuadrado en cm en el mundo real
+     */
+    constructor(imageShape, detected2DPoints, realWorldSideCm = 40.0) {
+        console.log('Creando instancia de SurfaceProjector...');
+
+        const h = imageShape.height;
+        const w = imageShape.width;
+
+        const halfSide = realWorldSideCm / 2.0;
+
+        // Puntos 3D de las esquinas del mundo real (centrado en origen, z=0)
+        this.worldPoints3DCorners = cv.matFromArray(4, 1, cv.CV_32FC3, [
+            -halfSide, -halfSide, 0.0,
+            halfSide, -halfSide, 0.0,
+            halfSide, halfSide, 0.0,
+            -halfSide, halfSide, 0.0
+        ]);
+
+        // Ordenar puntos 2D (TL, TR, BR, BL)
+        const ordered2D = orderPoints(detected2DPoints);
+        this.imagePoints2D = cv.matFromArray(4, 1, cv.CV_32FC2, [
+            ordered2D[0].x, ordered2D[0].y,
+            ordered2D[1].x, ordered2D[1].y,
+            ordered2D[2].x, ordered2D[2].y,
+            ordered2D[3].x, ordered2D[3].y
+        ]);
+
+        // Matriz de cámara
+        const focalLength = w;
+        const centerX = w / 2;
+        const centerY = h / 2;
+        this.cameraMatrix = cv.matFromArray(3, 3, cv.CV_64F, [
+            focalLength, 0, centerX,
+            0, focalLength, centerY,
+            0, 0, 1
+        ]);
+
+        // Coeficientes de distorsión (cero)
+        this.distCoeffs = new cv.Mat(4, 1, cv.CV_64F);
+        this.distCoeffs.setTo(new cv.Scalar(0, 0, 0, 0));
+
+        // Vectores de rotación y traslación
+        this.rvec = new cv.Mat(3, 1, cv.CV_64F);
+        this.tvec = new cv.Mat(3, 1, cv.CV_64F);
+
+        console.log('solvePnP con puntos 3D y puntos 2D');
+        const success = cv.solvePnP(
+            this.worldPoints3DCorners,
+            this.imagePoints2D,
+            this.cameraMatrix,
+            this.distCoeffs,
+            this.rvec,
+            this.tvec
+        );
+
+        if (!success) {
+            console.error('¡solvePnP falló!');
+        } else {
+            console.log('solvePnP exitoso.');
+        }
+    }
+
+    /**
+     * Proyecta puntos 3D a 2D manualmente (cv.projectPoints no está disponible)
+     * @param {cv.Mat} points3D - Puntos 3D (N x 1, CV_32FC3)
+     * @returns {Array<{x: number, y: number}>} Puntos 2D proyectados
+     */
+    projectPoints3DTo2D(points3D) {
+        // Convertir rvec a matriz de rotación usando Rodrigues
+        const rmat = new cv.Mat(3, 3, cv.CV_64F);
+        cv.Rodrigues(this.rvec, rmat);
+        
+        // Obtener parámetros de la matriz de cámara
+        const fx = this.cameraMatrix.doubleAt(0, 0);
+        const fy = this.cameraMatrix.doubleAt(1, 1);
+        const cx = this.cameraMatrix.doubleAt(0, 2);
+        const cy = this.cameraMatrix.doubleAt(1, 2);
+        
+        // Obtener traslación
+        const tx = this.tvec.doubleAt(0, 0);
+        const ty = this.tvec.doubleAt(1, 0);
+        const tz = this.tvec.doubleAt(2, 0);
+        
+        const points2D = [];
+        const numPoints = points3D.rows;
+        
+        for (let i = 0; i < numPoints; i++) {
+            // Obtener punto 3D
+            const x3d = points3D.floatAt(i, 0);
+            const y3d = points3D.floatAt(i, 1);
+            const z3d = points3D.floatAt(i, 2);
+            
+            // Aplicar rotación: R * [x, y, z]^T
+            const r11 = rmat.doubleAt(0, 0);
+            const r12 = rmat.doubleAt(0, 1);
+            const r13 = rmat.doubleAt(0, 2);
+            const r21 = rmat.doubleAt(1, 0);
+            const r22 = rmat.doubleAt(1, 1);
+            const r23 = rmat.doubleAt(1, 2);
+            const r31 = rmat.doubleAt(2, 0);
+            const r32 = rmat.doubleAt(2, 1);
+            const r33 = rmat.doubleAt(2, 2);
+            
+            const x_rot = r11 * x3d + r12 * y3d + r13 * z3d;
+            const y_rot = r21 * x3d + r22 * y3d + r23 * z3d;
+            const z_rot = r31 * x3d + r32 * y3d + r33 * z3d;
+            
+            // Aplicar traslación
+            const x_trans = x_rot + tx;
+            const y_trans = y_rot + ty;
+            const z_trans = z_rot + tz;
+            
+            // Proyectar usando matriz de cámara
+            if (z_trans > 0) {
+                const x2d = (fx * x_trans / z_trans) + cx;
+                const y2d = (fy * y_trans / z_trans) + cy;
+                points2D.push({ x: x2d, y: y2d });
+            } else {
+                // Si está detrás de la cámara, usar un punto fuera de la imagen
+                points2D.push({ x: -1, y: -1 });
+            }
+        }
+        
+        rmat.delete();
+        return points2D;
+    }
+
+    /**
+     * Dibuja la malla proyectada sobre la imagen
+     * @param {cv.Mat} image - Imagen donde dibujar (BGR)
+     * @param {number} heightCm - Altura en cm para proyectar la malla
+     */
+    drawProjectedGrids(image, heightCm = 0.0) {
+        const h = image.rows;
+        const w = image.cols;
+
+        const rangeExt = 80.0;
+        const nLines = 41;
+        const coords = [];
+        for (let i = 0; i < nLines; i++) {
+            coords.push(-rangeExt + (i * (2 * rangeExt) / (nLines - 1)));
+        }
+
+        // Crear líneas de la malla en 3D
+        const projGridLines3D = [];
+        for (const coord of coords) {
+            // Líneas horizontales
+            projGridLines3D.push([-rangeExt, coord, heightCm]);
+            projGridLines3D.push([rangeExt, coord, heightCm]);
+            // Líneas verticales
+            projGridLines3D.push([coord, -rangeExt, heightCm]);
+            projGridLines3D.push([coord, rangeExt, heightCm]);
+        }
+
+        // Convertir a Mat
+        const allProjPoints3D = cv.matFromArray(projGridLines3D.length, 1, cv.CV_32FC3, 
+            projGridLines3D.flat()
+        );
+
+        // Proyectar puntos 3D a 2D manualmente
+        const projPoints2D = this.projectPoints3DTo2D(allProjPoints3D);
+
+        // Dibujar líneas de la malla (verde)
+        const green = new cv.Scalar(0, 255, 0, 0);
+        for (let i = 0; i < projGridLines3D.length; i += 2) {
+            const pt1_2d = projPoints2D[i];
+            const pt2_2d = projPoints2D[i + 1];
+            
+            // Saltar si el punto está detrás de la cámara
+            if (pt1_2d.x < 0 || pt2_2d.x < 0) continue;
+            
+            let pt1 = new cv.Point(Math.round(pt1_2d.x), Math.round(pt1_2d.y));
+            let pt2 = new cv.Point(Math.round(pt2_2d.x), Math.round(pt2_2d.y));
+
+            // Clip line a los límites de la imagen (similar a cv2.clipLine)
+            // Si la línea intersecta con los bordes, dibujarla
+            const isInside1 = pt1.x >= 0 && pt1.x < w && pt1.y >= 0 && pt1.y < h;
+            const isInside2 = pt2.x >= 0 && pt2.x < w && pt2.y >= 0 && pt2.y < h;
+            
+            // Si al menos uno de los puntos está dentro o la línea cruza los bordes, dibujarla
+            if (isInside1 || isInside2 || 
+                (pt1.x < 0 && pt2.x >= 0) || (pt1.x >= w && pt2.x < w) ||
+                (pt1.y < 0 && pt2.y >= 0) || (pt1.y >= h && pt2.y < h)) {
+                cv.line(image, pt1, pt2, green, 1);
+            }
+        }
+
+        // Proyectar esquinas elevadas
+        const elevatedCorners3D = new cv.Mat(4, 1, cv.CV_32FC3);
+        for (let i = 0; i < 4; i++) {
+            const x = this.worldPoints3DCorners.floatAt(i, 0);
+            const y = this.worldPoints3DCorners.floatAt(i, 1);
+            const z = this.worldPoints3DCorners.floatAt(i, 2) + heightCm;
+            
+            const idx = i * 3;
+            elevatedCorners3D.data32F[idx] = x;
+            elevatedCorners3D.data32F[idx + 1] = y;
+            elevatedCorners3D.data32F[idx + 2] = z;
+        }
+
+        // Proyectar esquinas elevadas manualmente
+        const projectedCorners2D = this.projectPoints3DTo2D(elevatedCorners3D);
+
+        // Dibujar líneas desde esquinas base a esquinas elevadas (blanco)
+        const white = new cv.Scalar(255, 255, 255, 0);
+        for (let i = 0; i < 4; i++) {
+            const baseX = this.imagePoints2D.floatAt(i, 0);
+            const baseY = this.imagePoints2D.floatAt(i, 1);
+            const projPt = projectedCorners2D[i];
+            
+            // Saltar si el punto está detrás de la cámara
+            if (projPt.x < 0) continue;
+            
+            const p1 = new cv.Point(Math.round(baseX), Math.round(baseY));
+            const p2 = new cv.Point(Math.round(projPt.x), Math.round(projPt.y));
+            
+            // Dibujar línea siempre (las esquinas base deberían estar dentro)
+            cv.line(image, p1, p2, white, 1);
+        }
+
+        // Dibujar marcadores en los puntos base (morado) - asterisco
+        const purple = new cv.Scalar(255, 0, 255, 0);
+        for (let i = 0; i < 4; i++) {
+            const x = this.imagePoints2D.floatAt(i, 0);
+            const y = this.imagePoints2D.floatAt(i, 1);
+            const center = new cv.Point(Math.round(x), Math.round(y));
+            
+            // Dibujar asterisco de 8 rayos
+            const size = 20;
+            const numRays = 8;
+            
+            for (let j = 0; j < numRays; j++) {
+                const angle = (Math.PI * 2 * j) / numRays;
+                const px = center.x + Math.cos(angle) * size;
+                const py = center.y + Math.sin(angle) * size;
+                const endPoint = new cv.Point(Math.round(px), Math.round(py));
+                
+                // Dibujar línea desde el centro hacia afuera
+                cv.line(image, center, endPoint, purple, 2);
+            }
+            
+            // Dibujar centro
+            cv.circle(image, center, 2, purple, -1);
+        }
+
+        // Limpiar memoria
+        allProjPoints3D.delete();
+        elevatedCorners3D.delete();
+    }
+
+    /**
+     * Obtiene las esquinas proyectadas a una altura específica
+     * @param {number} heightCm - Altura en cm
+     * @returns {Array<{x: number, y: number}>} Esquinas proyectadas en 2D
+     */
+    getProjectedCorners(heightCm) {
+        // Crear puntos 3D elevados
+        const elevatedCorners3D = new cv.Mat(4, 1, cv.CV_32FC3);
+        for (let i = 0; i < 4; i++) {
+            const x = this.worldPoints3DCorners.floatAt(i, 0);
+            const y = this.worldPoints3DCorners.floatAt(i, 1);
+            const z = this.worldPoints3DCorners.floatAt(i, 2) + heightCm;
+            
+            const idx = i * 3;
+            elevatedCorners3D.data32F[idx] = x;
+            elevatedCorners3D.data32F[idx + 1] = y;
+            elevatedCorners3D.data32F[idx + 2] = z;
+        }
+
+        // Proyectar esquinas elevadas manualmente
+        const projectedCorners2D = this.projectPoints3DTo2D(elevatedCorners3D);
+
+        // Convertir a array de puntos
+        const corners = projectedCorners2D.map(pt => ({
+            x: Math.round(pt.x),
+            y: Math.round(pt.y)
+        }));
+
+        elevatedCorners3D.delete();
+
+        return corners;
+    }
+
+    /**
+     * Limpia la memoria de OpenCV
+     */
+    delete() {
+        this.worldPoints3DCorners.delete();
+        this.imagePoints2D.delete();
+        this.cameraMatrix.delete();
+        this.distCoeffs.delete();
+        this.rvec.delete();
+        this.tvec.delete();
+    }
+}
+
 // Exportar funciones
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
@@ -500,6 +865,26 @@ if (typeof module !== 'undefined' && module.exports) {
         kMeansClustering,
         processFrame,
         drawExtendedGrid,
-        calculateRealDistance
+        calculateRealDistance,
+        encodeImageToBase64,
+        calculateBoundingBox,
+        SurfaceProjector
+    };
+}
+
+// También exportar globalmente para uso en HTML
+if (typeof window !== 'undefined') {
+    window.DetectionAlgorithm = {
+        config,
+        adaptiveColorFilter,
+        findCenters,
+        orderPoints,
+        kMeansClustering,
+        processFrame,
+        drawExtendedGrid,
+        calculateRealDistance,
+        encodeImageToBase64,
+        calculateBoundingBox,
+        SurfaceProjector
     };
 }

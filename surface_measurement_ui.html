@@ -468,8 +468,12 @@
     <input type="file" id="fileInput" accept="video/*">
 
     <script async src="https://docs.opencv.org/4.5.2/opencv.js"></script>
+    <script src="detection_algorithm_js.js"></script>
 
     <script>
+        // Configuración del endpoint
+        const API_ENDPOINT = 'http://3.234.66.22:80/api/generate-centroids'; // Cambia por la URL de tu servidor Flask
+
         // Variables globales
         let video = null;
         let canvas = null;
@@ -479,6 +483,7 @@
         let currentFrame = 0;
         let totalFrames = 0;
         let surfacePoints = null;
+        let surfaceProjector = null;
         let measurements = {};
         let isSliderPressed = false;
         let isCalibrateMode = false;
@@ -644,7 +649,48 @@
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
             if (surfacePoints) {
-                drawGrid(ctx, surfacePoints);
+                // Dibujar malla con SurfaceProjector si está disponible
+                if (surfaceProjector && typeof cv !== 'undefined') {
+                    try {
+                        console.log('Dibujando malla con SurfaceProjector...');
+                        // Crear Mat desde el canvas
+                        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        const src = cv.matFromImageData(imageData);
+                        
+                        // Convertir RGBA a BGR para OpenCV
+                        const bgr = new cv.Mat();
+                        cv.cvtColor(src, bgr, cv.COLOR_RGBA2BGR);
+                        
+                        // Dibujar malla proyectada
+                        console.log('Llamando drawProjectedGrids...');
+                        surfaceProjector.drawProjectedGrids(bgr, 0.0);
+                        console.log('drawProjectedGrids completado');
+                        
+                        // Convertir de vuelta a RGBA
+                        cv.cvtColor(bgr, src, cv.COLOR_BGR2RGBA);
+                        
+                        // Copiar de vuelta al canvas
+                        const outputData = new Uint8ClampedArray(src.data);
+                        const imageDataOut = new ImageData(outputData, canvas.width, canvas.height);
+                        ctx.putImageData(imageDataOut, 0, 0);
+                        console.log('Malla copiada al canvas');
+                        
+                        // Limpiar memoria
+                        src.delete();
+                        bgr.delete();
+                    } catch (error) {
+                        console.error('Error al dibujar malla con OpenCV:', error);
+                        console.error('Stack:', error.stack);
+                        // Fallback al método anterior
+                        drawGrid(ctx, surfacePoints);
+                    }
+                } else {
+                    console.log('No hay SurfaceProjector o OpenCV no disponible');
+                    console.log('surfaceProjector:', surfaceProjector);
+                    console.log('cv disponible:', typeof cv !== 'undefined');
+                    // Método anterior si no hay SurfaceProjector
+                    drawGrid(ctx, surfacePoints);
+                }
                 
                 // Dibujar asteriscos morados solo si está en modo calibración
                 if (isCalibrateMode) {
@@ -748,9 +794,33 @@
             if (!video) return;
 
             if (isCalibrateMode) {
+                // Finalizar calibración - enviar datos al endpoint
                 isCalibrateMode = false;
+                
+                // Comentado: Crear SurfaceProjector cuando se finaliza la calibración
+                // if (surfacePoints && surfacePoints.length === 4 && 
+                //     typeof window.DetectionAlgorithm !== 'undefined' && 
+                //     window.DetectionAlgorithm.SurfaceProjector) {
+                //     try {
+                //         if (surfaceProjector) {
+                //             surfaceProjector.delete();
+                //         }
+                //         surfaceProjector = new window.DetectionAlgorithm.SurfaceProjector(
+                //             { width: canvas.width, height: canvas.height },
+                //             surfacePoints,
+                //             40.0 // realWorldSideCm
+                //         );
+                //         console.log('SurfaceProjector creado exitosamente al finalizar calibración');
+                //     } catch (error) {
+                //         console.error('Error al crear SurfaceProjector:', error);
+                //     }
+                // }
+                
                 updateUI();
                 renderFrame();
+                
+                // Enviar datos al endpoint
+                await sendCalibrationData();
             } else {
                 if (isMeasureMode) {
                     isMeasureMode = false;
@@ -763,6 +833,99 @@
                     updateUI();
                     renderFrame();
                 }
+            }
+        }
+
+        async function sendCalibrationData() {
+            if (!surfacePoints || surfacePoints.length !== 4) {
+                console.log('No hay puntos de calibración válidos');
+                return;
+            }
+
+            // Calcular bounding box de la calibración [x1, y1, x2, y2]
+            const boundingBox = window.DetectionAlgorithm.calculateBoundingBox(surfacePoints);
+
+            btnCalibrate.disabled = true;
+            btnCalibrate.textContent = 'Enviando...';
+
+            try {
+                // Codificar imagen a base64 usando OpenCV
+                const base64 = await window.DetectionAlgorithm.encodeImageToBase64(video);
+
+                // Preparar datos para enviar
+                const requestData = {
+                    image_base64: base64, // Base64 sin prefijo
+                    bounding_box: boundingBox    // [x1, y1, x2, y2]
+                };
+
+                // Enviar al endpoint
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.log('Error response:', errorText);
+                    throw new Error('Fallo');
+                }
+
+                const result = await response.json();
+                
+                // Si el endpoint devuelve los 4 puntos (centroids), actualizar y graficar
+                const receivedPoints = result.centroids || result.points;
+                if (result && receivedPoints && Array.isArray(receivedPoints) && receivedPoints.length === 4) {
+                    // Actualizar los puntos de superficie con los recibidos del endpoint
+                    surfacePoints = receivedPoints.map(p => ({
+                        x: p[0] || p.x,
+                        y: p[1] || p.y
+                    }));
+                    
+                    console.log('Puntos recibidos del endpoint:', surfacePoints);
+                    
+                    // Crear SurfaceProjector con los puntos obtenidos del endpoint
+                    if (typeof window.DetectionAlgorithm !== 'undefined' && 
+                        window.DetectionAlgorithm.SurfaceProjector) {
+                        try {
+                            console.log('Creando SurfaceProjector con puntos:', surfacePoints);
+                            if (surfaceProjector) {
+                                surfaceProjector.delete();
+                            }
+                            surfaceProjector = new window.DetectionAlgorithm.SurfaceProjector(
+                                { width: canvas.width, height: canvas.height },
+                                surfacePoints,
+                                40.0 // realWorldSideCm
+                            );
+                            console.log('SurfaceProjector creado exitosamente');
+                        } catch (error) {
+                            console.error('Error al crear SurfaceProjector:', error);
+                            console.error('Stack:', error.stack);
+                        }
+                    } else {
+                        console.error('DetectionAlgorithm o SurfaceProjector no disponible');
+                    }
+                    
+                    // Redibujar el frame con los nuevos puntos y la malla
+                    console.log('Llamando renderFrame después de recibir puntos...');
+                    renderFrame();
+                } else {
+                    console.log('No se recibieron 4 puntos del endpoint');
+                    console.log('Result:', result);
+                    console.log('centroids:', result.centroids);
+                    console.log('points:', result.points);
+                }
+                
+                alert('Éxito');
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Fallo');
+            } finally {
+                btnCalibrate.disabled = false;
+                btnCalibrate.textContent = 'Calibrar';
             }
         }
 
@@ -811,6 +974,7 @@
                     {x: w * 0.2, y: h * 0.7}
                 ];
 
+                // No crear SurfaceProjector aquí, se creará al finalizar la calibración
                 isCalibrateMode = true;
                 updateUI();
                 renderFrame();
@@ -823,8 +987,101 @@
             }
         }
 
-        function saveRecord() {
-            alert('Registro guardado');
+        async function saveRecord() {
+            if (!surfacePoints) {
+                alert('Por favor, calibra la superficie primero');
+                return;
+            }
+
+            const frameKey = currentFrame.toString();
+            const currentMeasurement = measurements[frameKey];
+
+            if (!currentMeasurement || currentMeasurement.length === 0) {
+                alert('Por favor, realiza una medición primero');
+                return;
+            }
+
+            // Obtener la última medición (o la primera si hay múltiples)
+            const measurement = currentMeasurement[currentMeasurement.length - 1];
+            const p1 = measurement.p1;
+            const p2 = measurement.p2;
+
+            // Calcular bounding box [x1, y1, x2, y2]
+            const x1 = Math.min(p1.x, p2.x);
+            const y1 = Math.min(p1.y, p2.y);
+            const x2 = Math.max(p1.x, p2.x);
+            const y2 = Math.max(p1.y, p2.y);
+            const boundingBox = [x1, y1, x2, y2];
+
+            // Deshabilitar botón mientras se procesa
+            btnSave.disabled = true;
+            btnSave.textContent = 'Enviando...';
+
+            try {
+                // Capturar el frame actual sin las anotaciones de medición
+                // Crear un canvas temporal para capturar solo el video sin las anotaciones
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // Dibujar solo el frame del video (sin grid ni mediciones)
+                tempCtx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Convertir a base64 (JPEG)
+                const imageBase64 = tempCanvas.toDataURL('image/jpeg', 0.9);
+                
+                // Remover el prefijo data:image/jpeg;base64, si está presente (el endpoint acepta ambos)
+                const base64WithoutPrefix = imageBase64.replace(/^data:image\/jpeg;base64,/, '');
+
+                // Preparar datos para enviar
+                const requestData = {
+                    image: base64WithoutPrefix, // Base64 sin prefijo
+                    bounding_box: boundingBox    // [x1, y1, x2, y2]
+                };
+
+                // Log del request
+                console.log('=== REQUEST INFO ===');
+                console.log('URL:', API_ENDPOINT);
+                console.log('Method: POST');
+                console.log('Headers:', {
+                    'Content-Type': 'application/json'
+                });
+                console.log('Bounding Box:', boundingBox);
+                console.log('Image Base64 length:', base64WithoutPrefix.length);
+                console.log('Image Base64 preview (first 100 chars):', base64WithoutPrefix.substring(0, 100));
+                console.log('Full request data:', {
+                    image: base64WithoutPrefix.substring(0, 100) + '...',
+                    bounding_box: boundingBox
+                });
+
+                // Enviar al endpoint
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                console.log('Response status:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.log('Error response:', errorText);
+                    throw new Error('Fallo');
+                }
+
+                const result = await response.json();
+                console.log('Success response:', result);
+                alert('Éxito');
+
+            } catch (error) {
+                alert('Fallo');
+            } finally {
+                btnSave.disabled = false;
+                btnSave.textContent = 'Guardar Registro';
+            }
         }
 
         function handleCanvasMouseDown(event) {
